@@ -1,0 +1,234 @@
+---
+title: "Final Project"
+output: html_document
+date: "2023-04-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+NCHS1 <- subset(NCHS_Drug_Poisoning_Mortality_by_County_United_States, Year %in% c(2006,2007,2008,2009,2010,2011,2012,2013,2014))
+
+ARCOS$year_cleaned <- as.numeric(ARCOS$year)
+```
+
+```{r}
+DRUGS <- merge(x=ARCOS, y=NCHS1,
+               by.x=c("BUYER_COUNTY","BUYER_STATE","year"),
+               by.y=c("COUNTYCAPS","STATECAPS","Year"))
+```
+
+
+```{r}
+rm(DRUGS1)
+```
+
+```{r}
+DRUGS1 <- subset(DRUGS, select = c("BUYER_COUNTY","BUYER_STATE","year","count","DOSAGE_UNIT","Population","Urban/Rural Category","Model-based Death Rate","Census Division"), year==2011)
+
+
+```
+
+Model-Based Death Rate = deaths/pop * 100,000
+
+```{r}
+#Calculating deaths per county from death rate
+DRUGS1$Deaths <- c(Deaths = DRUGS1$`Model-based Death Rate`/100000 * DRUGS1$Population)
+```
+
+```{r}
+DRUGS1 %>% group_by(year) %>% summarise(DEATHS=sum(Deaths), DOSE= mean(DOSAGE_UNIT))
+```
+```{r}
+unique(DRUGS1$`Urban/Rural Category`)
+```
+
+```{r}
+DRUGS1$Rurality <- relevel(factor(DRUGS1$`Urban/Rural Category`), ref = "Noncore")
+DRUGS2 <- subset(DRUGS1, select = c("DOSAGE_UNIT", "count","Population","Rurality","Deaths","Census Division"), year == 2011)
+
+stargazer(DRUGS2,
+title = "Descriptive Statistics",
+median = TRUE,
+digits = 2,
+type = 'text')
+```
+```{r}
+DRUGS1$Rurality <- relevel(factor(DRUGS1$`Urban/Rural Category`), ref = "Noncore")
+
+```
+
+```{r}
+hist(DRUGS1$DOSAGE_UNIT, breaks = 100)
+hist(log1p(DRUGS1$DOSAGE_UNIT), breaks = 100)
+
+#Want to transform dosage units, using log+1 to make the data more normally distributed
+
+hist(DRUGS1$Population, breaks = 100)
+hist(log1p(DRUGS1$Population), breaks = 100)
+
+hist(DRUGS1$count, breaks = 100)
+hist(log1p(DRUGS1$count), breaks = 100)
+
+hist(DRUGS1$Deaths, breaks = 100)
+hist(log1p(DRUGS1$Deaths), breaks = 100)
+
+hist(DRUGS1$Rurality, breaks = 100)
+
+```
+```{r}
+#log transform continuous variables
+DRUGS1$logDOSE <- log1p(DRUGS1$DOSAGE_UNIT)
+DRUGS1$logcount <- log1p(DRUGS1$count)
+DRUGS1$logPOP <- log1p(DRUGS1$Population)
+DRUGS1$logDeaths <- log1p(DRUGS1$Deaths)
+```
+
+```{r}
+lm <- lm(Deaths~DOSAGE_UNIT + count + Population + Rurality + `Census Division`, data=DRUGS1)
+vif(lm)
+summary(lm)
+
+lm1 <- lm(logDeaths~logDOSE + Rurality + logPOP + `Census Division`, data=DRUGS1)
+vif(lm1)
+
+plot(lm1)
+#View(cbind(sort(fitted(lm2), decreasing = TRUE), DRUGS1[order(fitted(lm2), decreasing = TRUE), ]))
+
+DRUGS1$Noncore <- ifelse(DRUGS1$`Urban/Rural Category` == "Noncore", 1, 0)
+
+plot(DRUGS1$logPOP, DRUGS1$logDeaths)
+plot(DRUGS1$Rurality, DRUGS1$`Census Division`)
+
+stargazer(lm, lm1,
+          type = "text", 
+          header = F, 
+          intercept.bottom = F, 
+          no.space = T, 
+          single.row = T)
+```
+Just log scale didnt fix collinearity issue (vif over 10)
+
+```{r}
+df2 <- na.omit(DRUGS1[, 
+  c("DOSAGE_UNIT",
+    "count",
+    "Population")])
+
+corrplot(cor(df2))
+```
+```{r
+```
+
+```{r}
+DRUGS1[c("25323","25323","7471"),]
+```
+These three have the highest death rate for their rurality.
+
+```{r}
+DRUGS1 %>%
+  filter(Rurality == 1) %>%
+  group_by(Rurality) %>%
+  summarize(mean(logDOSE), mean(logcount), mean(`Model-based Death Rate`))
+```
+```{r}
+
+ggplot(DRUGS1, aes(x = logDOSE, y = logDeaths))+
+geom_point(color = "grey") +
+theme_classic() +
+geom_smooth(method = "loess", color = "red", fill = "red") +
+geom_smooth(method=lm, color="black", size = .5, se=FALSE)
+
+ggplot(DRUGS1, aes(x = DOSAGE_UNIT, y = Deaths))+
+geom_point(color = "grey") +
+theme_classic() +
+geom_smooth(method = "loess", color = "red", fill = "red") +
+geom_smooth(method=lm, color="black", size = .5, se=FALSE)
+
+ggplot(DRUGS1, aes(x = logPOP, y = logDeaths))+
+geom_point(color = "grey") +
+theme_classic() +
+geom_smooth(method = "loess", color = "red", fill = "red") +
+geom_smooth(method=lm, color="black", size = .5, se=FALSE)
+
+
+```
+
+```{r}
+scatterplotMatrix(DRUGS1[,c("logDOSE", "logPOP", "logcount", "Rurality", "Census Division")],
+                  cex = .5,
+                  pch = 16,
+                  col = rgb(0,0,0,1/32),
+                  diagonal=list(method ="histogram", 
+                                breaks = 20),
+                  cex.labels = 0.5,
+                  regLine=list(method = lm,
+                               lty = 1,
+                               lwd = 1,
+                               col = 1),
+                  smooth = list(method = "loessLine",
+                                lty.smooth = 2,
+                                lwd.smooth = 1,
+                                col.smooth = 2,
+                                lty.spread = 3,
+                                lwd.spread = 1,
+                                col.spread = 2))
+
+scatterplot(fitted(lm),
+            resid(lm))
+
+scatterplot(fitted(lm1),
+            resid(lm1))
+
+scatterplot(fitted(lm2),
+            resid(lm2))
+
+plot(lm2)
+```
+
+Should we standardize and center rurality? Maybe doesn't change
+
+```{r}
+DRUGS1$RuralityC <- DRUGS1$Rurality - mean(DRUGS1$Rurality)
+DRUGS1$RuralityCS <- as.vector(scale(DRUGS1$RuralityC))
+
+hist(DRUGS1$RuralityC)
+hist(DRUGS1$RuralityCS)
+
+scatterplotMatrix(DRUGS1[,c("COUNT_PER_CAP", "DOSAGE_UNIT_PER_CAP", "RuralityCS")],
+                  cex = .5,
+                  pch = 16,
+                  col = rgb(0,0,0,1/32),
+                  diagonal=list(method ="histogram", 
+                                breaks = 20),
+                  cex.labels = 0.5,
+                  regLine=list(method = lm,
+                               lty = 1,
+                               lwd = 1,
+                               col = 1),
+                  smooth = list(method = "loessLine",
+                                lty.smooth = 2,
+                                lwd.smooth = 1,
+                                col.smooth = 2,
+                                lty.spread = 3,
+                                lwd.spread = 1,
+                                col.spread = 2))
+```
+
+```{r}
+DRUGS1$cooksd <- cooks.distance(lm2)
+
+lm3 <- lm(`Model-based Death Rate`~DOSAGE_UNIT_PER_CAP + COUNT_PER_CAP + Rurality, data = DRUGS1[DRUGS1$cooksd <= (4/2916),])
+summary(lm3)
+```
+```{r}
+stargazer(lm2, lm3,
+          type = "text", 
+          header = F, 
+          intercept.bottom = F, 
+          no.space = T, 
+          single.row = T)
+```
+
